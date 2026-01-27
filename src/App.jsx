@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useDebounce } from "react-use";
 
 import Search from "./components/Search";
@@ -22,23 +22,27 @@ const App = () => {
   const [searchTerm, setsearchterm] = useState("");
 
   const [movieList, setMovieList] = useState([]);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [fetchErrorMessage, setFetchErrorMessage] = useState("");
+  const [fetchLoading, setFetchLoading] = useState(false);
 
   const [trendingMovies, setTrendingMovies] = useState([]);
+  const [trendingErrorMessage, setTrendingErrorMessage] = useState("");
+  const [trendingLoading, setTrendingLoading] = useState(false);
 
   //debounce the search term to prevent making too many api requests
   useDebounce(() => setDebounceSearchTerm(searchTerm), 900, [searchTerm]);
 
   // fetching popular movies
   const fetchMovies = async (query = "") => {
-    setIsLoading(true);
-    setErrorMessage("");
+    setFetchLoading(true);
+    setFetchErrorMessage("");
 
     try {
       const endpoint = query
-        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+        ? // Search Movies URL
+          `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
+        : // Popular Movies URL
+          `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
 
       const response = await fetch(endpoint, API_OPTIONS);
 
@@ -48,40 +52,44 @@ const App = () => {
       const data = await response.json();
 
       if (data.response === "false") {
-        setErrorMessage(data.Error || "Error while fetching movies.");
+        setFetchErrorMessage(data.Error || "Error while fetching movies.");
         setMovieList([]);
         return;
       }
       setMovieList(data.results || []);
-      setIsLoading(false);
+      setFetchLoading(false);
 
       // Updating search count in appwrite if it exists and creating search count if it not exists
       if (query && data.results.length > 0) {
         await updateSearchCount(query, data.results[0]);
       }
     } catch {
-      console.log("Error fetching movies: ${error}");
-      setErrorMessage("Error fetching movies. Please try again later.");
+      setFetchErrorMessage("Error fetching movies. Please try again later.");
     } finally {
-      setIsLoading(false);
+      setFetchLoading(false);
     }
   };
 
   // trending movies
   const loadTrendingMovies = async () => {
+    setTrendingLoading(true);
+    setTrendingErrorMessage("");
+
     try {
       const movies = await getTrendingMovies();
       setTrendingMovies(movies);
     } catch (error) {
-      console.error("Error fetching trending movies.");
+      setFetchErrorMessage(error || "Error while fetching trending movies");
+    } finally {
+      setTrendingLoading(false);
     }
   };
 
-  // calling fetchMovies on every initial load
+  // calling fetchMovies on every debounceSearchTerm
   useEffect(() => {
     fetchMovies(debounceSearchTerm);
   }, [debounceSearchTerm]);
-
+  // calling loadingMovies on initial load
   useEffect(() => {
     loadTrendingMovies();
   }, []);
@@ -92,7 +100,7 @@ const App = () => {
 
       <div className="wrapper">
         <header>
-          <img src="./hero.png" alt="Hero Banner" />
+          <img src="./hero.WebP" alt="Hero Banner" />
           <h1>
             Find <span className="text-gradient">Movies</span> You'll Enjoy
             Without the Hassle
@@ -100,10 +108,13 @@ const App = () => {
           <Search searchTerm={searchTerm} setsearchterm={setsearchterm} />
         </header>
 
-        {trendingMovies.length > 0 && (
-          <section className="trending">
-            <h2>Trending Movies</h2>
-
+        <section className="trending ">
+          <h2>Trending Movies</h2>
+          {trendingMovies.length > 0 && trendingLoading ? (
+            <Spinner />
+          ) : trendingErrorMessage ? (
+            <p className="text-white">{trendingErrorMessage}</p>
+          ) : (
             <ul>
               {trendingMovies.map((movie, index) => (
                 <li key={movie.$id}>
@@ -112,16 +123,16 @@ const App = () => {
                 </li>
               ))}
             </ul>
-          </section>
-        )}
+          )}
+        </section>
 
         <section className="all-movies">
           <h2>All Movies</h2>
 
-          {isLoading ? (
+          {fetchLoading ? (
             <Spinner />
-          ) : errorMessage ? (
-            <p className="text-white">{errorMessage}</p>
+          ) : fetchErrorMessage ? (
+            <p className="text-white">{fetchErrorMessage}</p>
           ) : (
             <ul>
               {movieList.map((movie) => (
