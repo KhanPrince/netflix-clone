@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { updateSearchCount } from "../appwrite";
 
 const API_BASE_URL = "https://api.themoviedb.org/3/";
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
@@ -62,8 +63,14 @@ function useFetchMovies() {
 
         setTotalPages(data.total_pages);
         setCurrentPage(page);
+
+        if (query && data.results.length > 0) {
+          // Update search count
+          await updateSearchCount(query, data.results[0]);
+        }
       } catch (err) {
         if (err.name === "AbortError") {
+          // Ignore abort errors
           return;
         }
 

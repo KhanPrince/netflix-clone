@@ -6,14 +6,14 @@ import Spinner from "./components/Spinner";
 import MovieCard from "./components/movieCard";
 
 import useFetchMovies from "./hooks/useFetchMovies";
-import useTrendingMovies from "./hooks/useTrendingMovies";
+import useFavouriteMovies from "./hooks/useFavouriteMovies";
 import useInfiniteScroll from "./hooks/useInfiniteScroll";
 
 const App = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
-  // Use custom hooks
+  // Custom Hook to fetch movies
   const {
     movieList,
     isLoading: moviesLoading,
@@ -22,12 +22,13 @@ const App = () => {
     totalPages,
     fetchMovies,
   } = useFetchMovies();
-
+  // Custom Hook to fetchfavourite movies
   const {
-    movies: trendingMovies,
-    isLoading: trendingLoading,
-    error: trendingError,
-  } = useTrendingMovies();
+    movies: favouriteMovies,
+    isLoading: favouriteLoading,
+    error: favouriteError,
+    refetch, // refetch favouriteMovies to be used while debouncedSearchTerm
+  } = useFavouriteMovies();
 
   // Debounce search
   useDebounce(() => setDebouncedSearchTerm(searchTerm), 900, [searchTerm]);
@@ -35,6 +36,7 @@ const App = () => {
   // Fetch on search change
   useEffect(() => {
     fetchMovies(debouncedSearchTerm, 1, false);
+    refetch(); // refetch is the fetchfavourites provided by usefavourite hook
   }, [debouncedSearchTerm, fetchMovies]);
 
   // Infinite scroll
@@ -63,15 +65,15 @@ const App = () => {
         </header>
 
         {!isSearching && (
-          <section className="trending">
-            <h2>Trending Movies</h2>
-            {trendingLoading ? (
+          <section className="favourite">
+            <h2>Favourite List</h2>
+            {favouriteLoading ? (
               <Spinner />
-            ) : trendingError ? (
-              <p className="text-white">{trendingError}</p>
+            ) : favouriteError ? (
+              <p className="text-white">{favouriteError}</p>
             ) : (
               <ul>
-                {trendingMovies.map((movie, index) => (
+                {favouriteMovies.map((movie, index) => (
                   <li key={movie.$id}>
                     <p>{index + 1}</p>
                     <img src={movie.poster_url} alt={movie.title} />

@@ -50,7 +50,7 @@ export const updateSearchCount = async (searchTerm, movie) => {
   }
 };
 
-export const getTrendingMovies = async () => {
+export const getFavouriteMovies = async () => {
   try {
     const result = await database.listRows({
       databaseId: DATABASE_ID,
@@ -59,7 +59,7 @@ export const getTrendingMovies = async () => {
     });
     return result.rows;
   } catch (error) {
-    console.error("Error fetching trending movies:", error);
+    console.error("Error fetching favourite movies:", error);
     return [];
   }
 };
