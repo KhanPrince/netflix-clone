@@ -55,7 +55,7 @@ export const getTrendingMovies = async () => {
     const result = await database.listRows({
       databaseId: DATABASE_ID,
       tableId: TABLE_ID,
-      queries: [Query.limit(5), Query.limit(5)],
+      queries: [Query.limit(5), Query.orderDesc("count")],
     });
     return result.rows;
   } catch (error) {

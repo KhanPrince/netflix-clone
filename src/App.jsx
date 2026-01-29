@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useDebounce } from "react-use";
 
 import Search from "./components/Search";
 import Spinner from "./components/Spinner";
 import MovieCard from "./components/movieCard";
 import { getTrendingMovies, updateSearchCount } from "./appwrite";
-const API_BASE_URL = "https://api.themoviedb.org/3/";
 
+const API_BASE_URL = "https://api.themoviedb.org/3/";
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+
+// Constants
+const DEBOUNCE_DELAY = 900; // ms
+const TIMEOUT_DELAY = 200; // ms
+const SCROLL_THRESHOLD = 500; // px from bottom
 
 //api method ,headers and auth
 const API_OPTIONS = {
@@ -18,60 +23,100 @@ const API_OPTIONS = {
   },
 };
 const App = () => {
+  // searching states
   const [debounceSearchTerm, setDebounceSearchTerm] = useState("");
-  const [searchTerm, setsearchterm] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
+  //fetch states
   const [movieList, setMovieList] = useState([]);
   const [fetchErrorMessage, setFetchErrorMessage] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
 
+  //trending states
   const [trendingMovies, setTrendingMovies] = useState([]);
   const [trendingErrorMessage, setTrendingErrorMessage] = useState("");
   const [trendingLoading, setTrendingLoading] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // to cancel previous search requests  // cleanup
+  const abortControllerRef = useRef(new AbortController());
+  const scrollTimeoutRef = useRef(null);
+
   //debounce the search term to prevent making too many api requests
-  useDebounce(() => setDebounceSearchTerm(searchTerm), 900, [searchTerm]);
+
+  useDebounce(() => setDebounceSearchTerm(searchTerm), DEBOUNCE_DELAY, [
+    searchTerm,
+  ]);
 
   // fetching popular movies
-  const fetchMovies = async (query = "") => {
-    setFetchLoading(true);
-    setFetchErrorMessage("");
+  const fetchMovies = useCallback(
+    async (query = "", page = 1, append = false) => {
+      // Cancel previous requests
+      abortControllerRef.current.abort();
+      abortControllerRef.current = new AbortController();
 
-    try {
-      const endpoint = query
-        ? // Search Movies URL
-          `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-        : // Popular Movies URL
-          `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
-
-      const response = await fetch(endpoint, API_OPTIONS);
-
-      if (!response.ok) {
-        throw new Error("Failed to Load Movies.");
+      if (page === 1) {
+        setFetchLoading(true);
+      } else {
+        setIsLoadingMore(true);
       }
-      const data = await response.json();
+      setFetchErrorMessage("");
 
-      if (data.response === "false") {
-        setFetchErrorMessage(data.Error || "Error while fetching movies.");
-        setMovieList([]);
-        return;
-      }
-      setMovieList(data.results || []);
-      setFetchLoading(false);
+      try {
+        const endpoint = query
+          ? // Search Movies URL
+            `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}&page=${page}`
+          : // Popular Movies URL
+            `${API_BASE_URL}/discover/movie?sort_by=popularity.desc&page=${page}`;
 
-      // Updating search count in appwrite if it exists and creating search count if it not exists
-      if (query && data.results.length > 0) {
-        await updateSearchCount(query, data.results[0]);
+        const response = await fetch(endpoint, {
+          ...API_OPTIONS,
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to Load Movies.");
+        }
+        const data = await response.json();
+
+        if (!data.results) {
+          setFetchErrorMessage("No movies found");
+          if (page === 1) setMovieList([]);
+          return;
+        }
+
+        // Append new results to existing list if loading more, otherwise replace
+        if (append) {
+          setMovieList((prevList) => [...prevList, ...(data.results || [])]);
+        } else {
+          setMovieList(data.results || []);
+        }
+
+        setTotalPages(data.total_pages || 0);
+        setCurrentPage(page);
+
+        // Updating search count in appwrite if it exists and creating search count if it not exists
+        if (query && data.results.length > 0 && page === 1) {
+          await updateSearchCount(query, data.results[0]);
+        }
+      } catch (error) {
+        if (error.name === "AbortError") return; // Ignore aborted requests
+        console.error("Error fetching movies:", error);
+        setFetchErrorMessage("Error fetching movies. Please try again later.");
+      } finally {
+        setFetchLoading(false);
+        setIsLoadingMore(false);
       }
-    } catch {
-      setFetchErrorMessage("Error fetching movies. Please try again later.");
-    } finally {
-      setFetchLoading(false);
-    }
-  };
+    },
+    [],
+  );
 
   // trending movies
-  const loadTrendingMovies = async () => {
+  const loadTrendingMovies = useCallback(async () => {
     setTrendingLoading(true);
     setTrendingErrorMessage("");
 
@@ -79,20 +124,61 @@ const App = () => {
       const movies = await getTrendingMovies();
       setTrendingMovies(movies);
     } catch (error) {
-      setFetchErrorMessage(error || "Error while fetching trending movies");
+      setTrendingErrorMessage(error || "Error while fetching trending movies");
     } finally {
       setTrendingLoading(false);
     }
-  };
+  }, []);
 
   // calling fetchMovies on every debounceSearchTerm
   useEffect(() => {
-    fetchMovies(debounceSearchTerm);
-  }, [debounceSearchTerm]);
+    setCurrentPage(1);
+    setFetchErrorMessage(""); //clear errors of previous fetch
+    fetchMovies(debounceSearchTerm, 1, false);
+  }, [debounceSearchTerm, fetchMovies]);
+
   // calling loadingMovies on initial load
   useEffect(() => {
     loadTrendingMovies();
-  }, []);
+  }, [loadTrendingMovies]);
+
+  // Handle infinite scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      scrollTimeoutRef.current = setTimeout(() => {
+        // Check if user scrolled to bottom
+
+        if (
+          window.innerHeight + document.documentElement.scrollTop >=
+          document.documentElement.scrollHeight - SCROLL_THRESHOLD
+        ) {
+          // Load next page if available and not already loading
+          if (currentPage < totalPages && !isLoadingMore && !fetchLoading) {
+            fetchMovies(debounceSearchTerm, currentPage + 1, true);
+          }
+        }
+      }, TIMEOUT_DELAY);
+    };
+    // Cleanup : Removing listner and clear timeout
+    window.addEventListener("scroll", handleScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [
+    currentPage,
+    totalPages,
+    isLoadingMore,
+    fetchLoading,
+    debounceSearchTerm,
+    fetchMovies,
+  ]);
 
   return (
     <main>
@@ -105,16 +191,17 @@ const App = () => {
             Find <span className="text-gradient">Movies</span> You'll Enjoy
             Without the Hassle
           </h1>
-          <Search searchTerm={searchTerm} setsearchterm={setsearchterm} />
+          <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
         </header>
+        {searchTerm && <p className="text-white">{searchTerm}</p>}
 
         <section className="trending ">
           <h2>Trending Movies</h2>
-          {trendingMovies.length > 0 && trendingLoading ? (
+          {trendingLoading ? (
             <Spinner />
           ) : trendingErrorMessage ? (
             <p className="text-white">{trendingErrorMessage}</p>
-          ) : (
+          ) : trendingMovies.length > 0 ? (
             <ul>
               {trendingMovies.map((movie, index) => (
                 <li key={movie.$id}>
@@ -123,6 +210,8 @@ const App = () => {
                 </li>
               ))}
             </ul>
+          ) : (
+            <p className="text-white">No trending movies available</p>
           )}
         </section>
 
@@ -133,16 +222,22 @@ const App = () => {
             <Spinner />
           ) : fetchErrorMessage ? (
             <p className="text-white">{fetchErrorMessage}</p>
+          ) : movieList.length > 0 ? (
+            <>
+              <ul>
+                {movieList.map((movie) => (
+                  <MovieCard key={movie.id} movie={movie} />
+                ))}
+              </ul>
+              {isLoadingMore && <Spinner />}
+            </>
           ) : (
-            <ul>
-              {movieList.map((movie) => (
-                <MovieCard key={movie.id} movie={movie} />
-              ))}
-            </ul>
+            <p className="text-white">
+              {" "}
+              No movie found. Try a different Search
+            </p>
           )}
         </section>
-
-        <h1 className="text-white">{searchTerm}</h1>
       </div>
     </main>
   );
