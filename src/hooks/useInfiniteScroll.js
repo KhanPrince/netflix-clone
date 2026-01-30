@@ -10,9 +10,14 @@ const useInfiniteScroll = (onLoadMore, options = {}) => {
     }
 
     scrollTimeoutRef.current = setTimeout(() => {
+      // cross-browser compatible scroll position and document height
+      const scrollPosition =
+        window.scrollY || document.documentElement.scrollTop;
+      const documentHeight =
+        document.body.offsetHeight || document.documentElement.scrollHeight;
+
       const isNearBottom =
-        window.innerHeight + window.scrollY >=
-        document.body.offsetHeight - threshold;
+        window.innerHeight + scrollPosition >= documentHeight - threshold;
 
       if (isNearBottom) {
         onLoadMore();
