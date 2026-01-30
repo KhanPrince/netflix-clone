@@ -3,7 +3,7 @@ import { useDebounce } from "react-use";
 
 import Search from "./components/Search";
 import Spinner from "./components/Spinner";
-import MovieCard from "./components/movieCard";
+import MovieCard from "./components/MovieCard";
 
 import useFetchMovies from "./hooks/useFetchMovies";
 import useFavouriteMovies from "./hooks/useFavouriteMovies";
