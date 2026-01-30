@@ -1,10 +1,10 @@
-import { useEffect, useRef, useCallback, use } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 const useInfiniteScroll = (onLoadMore, options = {}) => {
   const { threshold = 500, delay = 200 } = options;
   const scrollTimeoutRef = useRef(null);
 
-  const hancleScroll = useCallback(() => {
+  const handleScroll = useCallback(() => {
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
     }
@@ -21,15 +21,15 @@ const useInfiniteScroll = (onLoadMore, options = {}) => {
   }, [onLoadMore, threshold, delay]);
 
   useEffect(() => {
-    window.addEventListener("scroll", hancleScroll);
+    window.addEventListener("scroll", handleScroll);
 
     return () => {
-      window.removeEventListener("scroll", hancleScroll);
+      window.removeEventListener("scroll", handleScroll);
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, [hancleScroll]);
+  }, [handleScroll]);
 };
 
 export default useInfiniteScroll;
